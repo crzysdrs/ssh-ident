@@ -140,6 +140,19 @@ To have multiple identities, all I have to do is:
     (r"corp", "work"),
   ]
 
+  # If you want to search for argv, use "argv" or "a", if you want to search paths use
+  # "p", "path", "paths", as the first tuple item. These rules will be run
+  # in order, searching the entire path or argv for the regex before
+  # moving to the next item.
+  # These rules will take precedence over MATCH_ARGV and MATCH_PATHS and using
+  # MATCH_ORDER can replace existing MATCH_ARGV or MATCH_PATHS
+  MATCH_ORDER = [
+    ("a",     r"cweb",      "personal"),
+    ("argv",  r"cweb2",     "personal2"),
+    ("p",     r"opt/work",  "work"),
+    ("paths", r"opt/work2", "work2"),
+  ]
+
   # Note that if no match is found, the DEFAULT_IDENTITY is used. This is
   # generally your loginname, no need to change it.
   # This is optional - don't include any DEFAULT_IDENTITY if you don't
@@ -293,6 +306,7 @@ class Config(object):
       # at the documentation for more details.
       "MATCH_PATH": [],
       "MATCH_ARGV": [],
+      "MATCH_ORDER": [],
 
       # Dictionary with identity as a key, allows to specify
       # per identity options when using ssh-add.
@@ -355,6 +369,30 @@ def FindIdentityInList(elements, identities):
         return identity
   return None
 
+def FindOrderIdentity(argv, paths, identities):
+  """ Matches a special list of identities against either argv or path in defined order.
+  
+  Note: The search behavior here is different from the standard method. It will
+  search a the entire argv or path for each identity in order. Unlike the existing
+  behavior which searches element 0 for all identities, element 1 for all identities etc.
+
+  Args:
+    argv: the arguments list
+    paths: ths paths list
+  Returns:
+    string: the name of the identity to use.
+  """
+  for choice, regex, identity in identities:
+    if re.search("^a(rgv)?$", choice):
+      found = FindIdentityInList(argv, [(regex, identity)])
+    elif re.search("^p(aths?)?$", choice):
+      found = FindIdentityInList(paths, [(regex, identity)])
+    else:
+      print("Error in configuration. '{}' is unknown search type (argv or path)".format(choice), file=sys.stderr);
+    if found:
+      return found
+  return None
+
 def FindIdentity(argv, config):
   """Returns the identity to use based on current directory or argv.
 
@@ -368,6 +406,7 @@ def FindIdentity(argv, config):
   """
   paths = set([os.getcwd(), os.path.abspath(os.getcwd()), os.path.normpath(os.getcwd())])
   return (
+      FindOrderIdentity(argv, paths, config.Get("MATCH_ORDER")) or
       FindIdentityInList(argv, config.Get("MATCH_ARGV")) or
       FindIdentityInList(paths, config.Get("MATCH_PATH")) or
       config.Get("DEFAULT_IDENTITY"))
